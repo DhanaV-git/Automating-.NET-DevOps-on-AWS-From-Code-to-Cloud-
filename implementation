@@ -1,0 +1,174 @@
+1. Development Phase
+GitHub - Source Code Management
+
+    The development team writes the .NET application (ASP.NET Core or any .NET variant).
+    The code is managed using GitHub in a repository.
+    A branching strategy (e.g., GitFlow) is followed:
+        Main Branch – Stable production-ready code.
+        Develop Branch – Integrates new features before merging to the main branch.
+        Feature Branches – Developers work on new features in separate branches.
+    Developers push their code to GitHub and create Pull Requests (PRs) for peer review.
+
+SonarQube - Code Quality & Security Scanning
+
+    SonarQube is integrated with GitHub using webhooks.
+    It runs automated code analysis upon pull requests and commits.
+    Reports code smells, bugs, vulnerabilities, and security flaws.
+    Developers fix the reported issues before merging.
+
+2. Continuous Integration (CI) - Jenkins Pipeline
+Jenkins - Automated Build & Testing
+
+    Jenkins Setup:
+        Installed on an EC2 instance or as a container.
+        Uses GitHub Webhooks to trigger builds on new commits.
+        Configured with a Jenkinsfile (Declarative or Scripted Pipeline).
+
+    Pipeline Stages:
+        Clone Repository:
+            Pull the latest code from GitHub.
+        Run Unit Tests:
+            Executes .NET Core xUnit/NUnit/MSTest test cases.
+        Static Code Analysis:
+            SonarQube analysis is triggered.
+        Build the Application:
+            Runs .NET publish to create the application binaries.
+        Create Docker Image:
+            Builds a Docker container for the application.
+        Push to Docker Hub or AWS ECR:
+            Image is tagged with version (app:v1.0) and pushed.
+
+3. Infrastructure as Code (IaC) - Terraform
+Terraform - AWS Infrastructure Provisioning
+
+    Terraform is used to provision AWS resources, ensuring repeatability.
+
+    The main infrastructure includes:
+        EKS Cluster (Managed Kubernetes Service)
+        ECS Cluster (For running additional containerized workloads)
+        IAM Roles (Permissions for AWS services)
+        VPC, Subnets, Security Groups (Networking)
+        RDS/Database (If needed)
+        API Gateway (Exposing endpoints)
+        Elastic Load Balancer (ALB/NLB) (Traffic management)
+
+    Terraform Execution:
+
+    terraform init
+    terraform plan
+    terraform apply
+
+4. Continuous Deployment (CD) - FluxCD
+FluxCD - GitOps for Kubernetes
+
+    FluxCD automates the deployment of the application to AWS EKS.
+    Monitors GitHub repositories for changes in Kubernetes manifests stored in a deployments repo.
+    Applies these manifests to the cluster automatically.
+
+5. Deployment on AWS
+Containerization
+
+    Docker (Containerization):
+        Application is containerized using a Dockerfile.
+        Sample Dockerfile:
+
+FROM mcr.microsoft.com/dotnet/aspnet:7.0
+COPY ./publish /app
+WORKDIR /app
+ENTRYPOINT ["dotnet", "MyApp.dll"]
+
+Image is built and pushed:
+
+        docker build -t myapp:v1 .
+        docker tag myapp:v1 <aws_account_id>.dkr.ecr.<region>.amazonaws.com/myapp:v1
+        docker push <aws_account_id>.dkr.ecr.<region>.amazonaws.com/myapp:v1
+
+Kubernetes (AWS EKS)
+
+    EKS Cluster Setup (via Terraform)
+        Creates an Amazon EKS cluster with necessary node groups.
+
+    Deploy Application to EKS
+        Create a Kubernetes Deployment and Service YAML:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/myapp:v1
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: myapp
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+
+Apply the deployment:
+
+        kubectl apply -f deployment.yaml
+
+AWS ECS Deployment (Alternative to EKS)
+
+    Uses Fargate or EC2-backed ECS instances.
+    Define a Task Definition and Service.
+
+6. Networking & Security
+IAM - Permissions Management
+
+    Roles for:
+        Jenkins (Access to ECR, EKS, ECS)
+        EKS Worker Nodes (To pull images)
+        ECS Task Role (For container execution)
+
+Load Balancers & API Gateway
+
+    Load Balancer (ALB/NLB)
+        Routes traffic to EKS pods.
+        ALB Ingress Controller for EKS.
+    API Gateway
+        Exposes microservices.
+        Routes requests to either EKS/ECS containers.
+
+7. Monitoring & Logging
+
+    CloudWatch Logs: For ECS, EKS, and API Gateway logs.
+    Prometheus + Grafana: Monitoring Kubernetes metrics.
+    AWS X-Ray: Tracing API calls.
+
+8. Scaling & Auto-recovery
+
+    Horizontal Pod Autoscaler (HPA) for EKS
+    ECS Auto Scaling
+    Load Balancer Target Groups distribute traffic.
+
+End-to-End Flow Summary
+
+    Developers push code → GitHub
+    Jenkins triggers build → Runs tests & SonarQube analysis
+    Docker image created → Pushed to AWS ECR
+    Terraform provisions AWS infra (EKS, ECS, IAM, API Gateway, Load Balancers)
+    FluxCD deploys app to EKS
+    Application exposed via Load Balancer & API Gateway
+    Monitoring via CloudWatch & Prometheus
+    Auto-scaling & self-healing ensure uptime
